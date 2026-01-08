@@ -16,6 +16,17 @@ const dbConfig = {
   queueLimit: 0,
 };
 
+// DNS lookup log
+const dns = require("dns");
+
+dns.lookup((process.env.DB_HOST || "").trim(), (err, address) => {
+  console.log("DNS lookup:", {
+    host: (process.env.DB_HOST || "").trim(),
+    err: err && { code: err.code, message: err.message },
+    address,
+  });
+});
+
 // initialize express app
 const app = express();
 app.use(express.json());
