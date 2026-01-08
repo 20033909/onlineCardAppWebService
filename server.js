@@ -6,11 +6,11 @@ const port = process.env.PORT || 3000;
 
 // database connection configuration
 const dbConfig = {
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
+  host: (process.env.DB_HOST || "").trim(),
+  user: (process.env.DB_USER || "").trim(),
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT || 3306,
+  database: (process.env.DB_NAME || "").trim(),
+  port: Number(process.env.DB_PORT) || 3306,
   waitForConnections: true,
   connectionLimit: 100,
   queueLimit: 0,
@@ -37,4 +37,14 @@ app.get("/allcards", async (req, res) => {
       .status(500)
       .json({ error: "Internal Server Error for getting all cards" });
   }
+});
+
+app.get("/debug-env", (req, res) => {
+  res.json({
+    DB_HOST: process.env.DB_HOST,
+    DB_PORT: process.env.DB_PORT,
+    DB_NAME: process.env.DB_NAME,
+    DB_USER: process.env.DB_USER,
+    hostLen: process.env.DB_HOST?.length,
+  });
 });
