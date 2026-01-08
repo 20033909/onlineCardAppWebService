@@ -2,6 +2,11 @@
 const express = require("express");
 const mysql = require("mysql2/promise");
 require("dotenv").config();
+
+// initialize express app
+const app = express();
+app.use(express.json());
+
 const port = process.env.PORT || 3000;
 
 // database connection configuration
@@ -11,25 +16,15 @@ const dbConfig = {
   password: process.env.DB_PASSWORD,
   database: (process.env.DB_NAME || "").trim(),
   port: Number(process.env.DB_PORT) || 3306,
+
+  // pool options (these only apply when using createPool)
   waitForConnections: true,
   connectionLimit: 100,
   queueLimit: 0,
 };
 
-// DNS lookup log
-// const dns = require("dns");
-
-// dns.lookup((process.env.DB_HOST || "").trim(), (err, address) => {
-//   console.log("DNS lookup:", {
-//     host: (process.env.DB_HOST || "").trim(),
-//     err: err && { code: err.code, message: err.message },
-//     address,
-//   });
-// });
-
-// initialize express app
-const app = express();
-app.use(express.json());
+// create ONE pool for the whole app (do this once)
+const pool = mysql.createPool(dbConfig);
 
 // start the server
 app.listen(port, () => {
@@ -39,8 +34,7 @@ app.listen(port, () => {
 // get all cards
 app.get("/allcards", async (req, res) => {
   try {
-    const connection = await mysql.createConnection(dbConfig);
-    const [rows] = await connection.execute("SELECT * FROM cards");
+    const [rows] = await pool.query("SELECT * FROM cards");
     res.json(rows);
   } catch (error) {
     console.error("Error fetching cards:", error);
@@ -54,8 +48,7 @@ app.get("/allcards", async (req, res) => {
 app.post("/addcard", async (req, res) => {
   const { card_name, card_pic } = req.body;
   try {
-    const connection = await mysql.createConnection(dbConfig);
-    const [result] = await connection.execute(
+    const [result] = await pool.query(
       "INSERT INTO cards (card_name, card_pic) VALUES (?, ?)",
       [card_name, card_pic]
     );
