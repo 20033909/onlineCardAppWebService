@@ -47,6 +47,13 @@ app.get("/allcards", async (req, res) => {
 // add a new card
 app.post("/addcard", async (req, res) => {
   const { card_name, card_pic } = req.body;
+
+  if (!card_name || !card_pic) {
+    return res
+      .status(400)
+      .json({ error: "card_name and card_pic are required" });
+  }
+
   try {
     const [result] = await pool.query(
       "INSERT INTO cards (card_name, card_pic) VALUES (?, ?)",
@@ -59,12 +66,56 @@ app.post("/addcard", async (req, res) => {
   }
 });
 
-// app.get("/debug-env", (req, res) => {
-//   res.json({
-//     DB_HOST: process.env.DB_HOST,
-//     DB_PORT: process.env.DB_PORT,
-//     DB_NAME: process.env.DB_NAME,
-//     DB_USER: process.env.DB_USER,
-//     hostLen: process.env.DB_HOST?.length,
-//   });
-// });
+// update a card, week 10
+app.put("/updatecard/:id", async (req, res) => {
+  const { id } = req.params;
+  const { card_name, card_pic } = req.body;
+
+  if (!card_name || !card_pic) {
+    return res
+      .status(400)
+      .json({ error: "card_name and card_pic are required" });
+  }
+
+  try {
+    const [result] = await pool.query(
+      "UPDATE cards SET card_name = ?, card_pic = ? WHERE id = ?",
+      [card_name, card_pic, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Card not found" });
+    }
+
+    res
+      .status(200)
+      .json({ message: "Card updated", affectedRows: result.affectedRows });
+  } catch (error) {
+    console.error("Error updating card:", error);
+    res
+      .status(500)
+      .json({ error: "Internal Server Error for updating a card" });
+  }
+});
+
+// delete a card, week 10
+app.delete("/deletecard/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [result] = await pool.query("DELETE FROM cards WHERE id = ?", [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Card not found" });
+    }
+
+    res
+      .status(200)
+      .json({ message: "Card deleted", affectedRows: result.affectedRows });
+  } catch (error) {
+    console.error("Error deleting card:", error);
+    res
+      .status(500)
+      .json({ error: "Internal Server Error for deleting a card" });
+  }
+});
