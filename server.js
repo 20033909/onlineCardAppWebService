@@ -52,11 +52,9 @@ app.use(
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
   })
 );
-
-// Ensure preflight requests are handled
-app.options("*", cors());
 
 // get all cards
 app.get("/allcards", async (req, res) => {
