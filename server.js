@@ -16,7 +16,29 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   port: Number(process.env.DB_PORT),
+  waitForConnections: true,
+  connectionLimit: 5, // matches your DB user limit
+  queueLimit: 0,
 });
+
+// Helper function for safe queries
+async function safeQuery(sql, params = []) {
+  let retries = 3;
+  while (retries > 0) {
+    try {
+      const [rows] = await pool.query(sql, params);
+      return rows;
+    } catch (err) {
+      if (err.code === "ER_USER_LIMIT_REACHED") {
+        await new Promise((r) => setTimeout(r, 100)); // wait 100ms
+        retries--;
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw new Error("Max user connections reached. Try again later.");
+}
 
 // -------------------- JWT -------------------- //
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -26,9 +48,8 @@ app.use(cors({ origin: "https://c219-ca2-card-app.vercel.app" }));
 
 // -------------------- TABLE -------------------- //
 async function ensureTables() {
-  const conn = await pool.getConnection();
   try {
-    await conn.query(`
+    await safeQuery(`
       CREATE TABLE IF NOT EXISTS certs (
         id INT AUTO_INCREMENT PRIMARY KEY,
         cert_name VARCHAR(255) NOT NULL,
@@ -36,15 +57,15 @@ async function ensureTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    await conn.query(`
+    await safeQuery(`
       CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
         email VARCHAR(255) NOT NULL UNIQUE,
         password VARCHAR(255) NOT NULL
       )
     `);
-  } finally {
-    conn.release();
+  } catch (err) {
+    console.error("Error creating tables:", err);
   }
 }
 
@@ -68,21 +89,13 @@ function authenticateAdmin(req, res, next) {
 app.post("/register", async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
-
-    await pool.query(
-      "INSERT INTO users (email, password) VALUES (?, ?)",
-      [email, password]
-    );
-
+    await safeQuery("INSERT INTO users (email, password) VALUES (?, ?)", [email, password]);
     res.status(201).json({ message: "User registered successfully" });
   } catch (err) {
-    if (err.code === "ER_DUP_ENTRY") {
-      return res.status(400).json({ error: "Email already exists" });
-    }
+    if (err.code === "ER_DUP_ENTRY") return res.status(400).json({ error: "Email already exists" });
+    console.error(err);
     res.status(500).json({ error: "Registration failed" });
   }
 });
@@ -91,72 +104,73 @@ app.post("/register", async (req, res) => {
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
+    const rows = await safeQuery("SELECT * FROM users WHERE email = ? AND password = ?", [email, password]);
 
-    const [rows] = await pool.query(
-      "SELECT * FROM users WHERE email = ? AND password = ?",
-      [email, password]
-    );
-
-    if (rows.length === 0) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
+    if (rows.length === 0) return res.status(401).json({ error: "Invalid credentials" });
 
     const user = rows[0];
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: "1h" });
 
     res.json({ token, email: user.email });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Login failed" });
   }
 });
 
-// PUBLIC: view certs (no login needed)
+// PUBLIC: view certs
 app.get("/allcerts", async (req, res) => {
-  const [rows] = await pool.query("SELECT * FROM certs");
-  res.json(rows);
+  try {
+    const rows = await safeQuery("SELECT * FROM certs");
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch certs" });
+  }
 });
 
-// ADMIN ONLY: add cert
+// ADMIN: add cert
 app.post("/addcert", authenticateAdmin, async (req, res) => {
-  const { cert_name, cert_pic } = req.body;
-  await pool.query(
-    "INSERT INTO certs (cert_name, cert_pic) VALUES (?, ?)",
-    [cert_name, cert_pic]
-  );
-  res.sendStatus(201);
+  try {
+    const { cert_name, cert_pic } = req.body;
+    await safeQuery("INSERT INTO certs (cert_name, cert_pic) VALUES (?, ?)", [cert_name, cert_pic]);
+    res.sendStatus(201);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add cert" });
+  }
 });
 
-// ADMIN ONLY: update cert
+// ADMIN: update cert
 app.put("/updatecert/:id", authenticateAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { cert_name, cert_pic } = req.body;
-  await pool.query(
-    "UPDATE certs SET cert_name = ?, cert_pic = ? WHERE id = ?",
-    [cert_name, cert_pic, id]
-  );
-  res.sendStatus(200);
+  try {
+    const { id } = req.params;
+    const { cert_name, cert_pic } = req.body;
+    await safeQuery("UPDATE certs SET cert_name = ?, cert_pic = ? WHERE id = ?", [cert_name, cert_pic, id]);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update cert" });
+  }
 });
 
-// ADMIN ONLY: delete cert
+// ADMIN: delete cert
 app.delete("/deletecert/:id", authenticateAdmin, async (req, res) => {
-  const { id } = req.params;
-  await pool.query("DELETE FROM certs WHERE id = ?", [id]);
-  res.sendStatus(200);
+  try {
+    const { id } = req.params;
+    await safeQuery("DELETE FROM certs WHERE id = ?", [id]);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete cert" });
+  }
 });
 
 // -------------------- START -------------------- //
 (async () => {
   await ensureTables();
-  app.listen(port, () =>
-    console.log(`✅ Server running on port ${port}`)
-  );
+  app.listen(port, () => console.log(`✅ Server running on port ${port}`));
 })();
 
