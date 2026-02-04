@@ -6,6 +6,7 @@ require('dotenv').config();
 const cardRoutes = require('./routes/cardRoutes');
 const userRoutes = require('./routes/userRoutes');
 const { initializeDatabase } = require('./config/database');
+const { generalLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +15,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Apply general rate limiting to all routes
+app.use(generalLimiter);
 
 // Routes
 app.get('/', (req, res) => {

@@ -14,6 +14,19 @@ Most endpoints require JWT authentication. Include the token in the Authorizatio
 Authorization: Bearer <your-token>
 ```
 
+## Rate Limiting
+The API implements rate limiting to prevent abuse:
+- **General endpoints**: 100 requests per 15 minutes per IP
+- **Authentication endpoints** (register/login): 5 requests per 15 minutes per IP
+- **Card operations**: 50 requests per 15 minutes per IP
+
+When rate limit is exceeded, you'll receive a 429 status code with message:
+```json
+{
+  "message": "Too many requests from this IP, please try again later."
+}
+```
+
 ---
 
 ## Endpoints
@@ -417,6 +430,15 @@ Resource already exists.
 }
 ```
 
+### 429 Too Many Requests
+Rate limit exceeded.
+
+```json
+{
+  "message": "Too many requests from this IP, please try again later."
+}
+```
+
 ### 500 Internal Server Error
 Server error.
 
@@ -465,6 +487,7 @@ created_at: DATETIME
 3. **CVV Protection**: CVV is never returned in API responses
 4. **Authorization**: Users can only access their own cards
 5. **Input Validation**: All inputs are validated using express-validator
+6. **Rate Limiting**: Implemented to prevent brute-force attacks and abuse
 
 ---
 

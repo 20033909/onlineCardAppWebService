@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { generateToken, authenticateToken } = require('../middleware/auth');
+const { authLimiter, generalLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ const validateLogin = [
 ];
 
 // Register a new user
-router.post('/register', validateRegistration, async (req, res) => {
+router.post('/register', authLimiter, validateRegistration, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -54,7 +55,7 @@ router.post('/register', validateRegistration, async (req, res) => {
 });
 
 // Login
-router.post('/login', validateLogin, async (req, res) => {
+router.post('/login', authLimiter, validateLogin, async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -87,7 +88,7 @@ router.post('/login', validateLogin, async (req, res) => {
 });
 
 // Get current user profile
-router.get('/profile', authenticateToken, async (req, res) => {
+router.get('/profile', generalLimiter, authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) {
@@ -102,7 +103,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 });
 
 // Get all users (protected route)
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', generalLimiter, authenticateToken, async (req, res) => {
   try {
     const users = await User.getAll();
     res.json({ users });

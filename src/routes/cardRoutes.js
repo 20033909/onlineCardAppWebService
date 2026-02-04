@@ -2,10 +2,12 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Card = require('../models/Card');
 const { authenticateToken } = require('../middleware/auth');
+const { cardLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
-// All card routes require authentication
+// All card routes require authentication and rate limiting
+router.use(cardLimiter);
 router.use(authenticateToken);
 
 // Validation middleware

@@ -21,6 +21,7 @@ A RESTful API backend service for managing online card applications. This projec
   - Password encryption
   - Protected API endpoints
   - Input validation and sanitization
+  - Rate limiting to prevent abuse
 
 ## Technology Stack
 
@@ -30,6 +31,7 @@ A RESTful API backend service for managing online card applications. This projec
 - **Authentication**: JWT (jsonwebtoken)
 - **Password Hashing**: bcryptjs
 - **Validation**: express-validator
+- **Rate Limiting**: express-rate-limit
 
 ## Installation
 
@@ -228,8 +230,10 @@ onlineCardAppWebService/
 - Never commit the `.env` file to version control
 - Change the `JWT_SECRET` in production
 - Use HTTPS in production
-- Implement rate limiting for production use
-- Consider additional security measures for CVV storage
+- Rate limiting is implemented to prevent abuse:
+  - General endpoints: 100 requests per 15 minutes
+  - Authentication endpoints: 5 attempts per 15 minutes
+  - Card operations: 50 requests per 15 minutes
 - Validate and sanitize all user inputs
 
 ## License
