@@ -22,7 +22,7 @@ const pool = mysql.createPool({
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // -------------------- CORS -------------------- //
-app.use(cors({ origin: true }));
+app.use(cors({ origin: "https://c219-ca2-2212ka9oe-jasons-projects-dee748ed.vercel.app" }));
 
 // -------------------- TABLE -------------------- //
 async function ensureTables() {
