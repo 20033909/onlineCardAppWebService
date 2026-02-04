@@ -1,146 +1,162 @@
-// include the required modules
 const express = require("express");
 const mysql = require("mysql2/promise");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
+const cors = require("cors");
 
-// initialize express app
 const app = express();
 app.use(express.json());
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080;
 
-// database connection configuration
-const dbConfig = {
-  host: (process.env.DB_HOST || "").trim(),
-  user: (process.env.DB_USER || "").trim(),
+// -------------------- DB -------------------- //
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: (process.env.DB_NAME || "").trim(),
-  port: Number(process.env.DB_PORT) || 3306,
-
-  // pool options (these only apply when using createPool)
-  waitForConnections: true,
-  connectionLimit: 100,
-  queueLimit: 0,
-};
-
-// create ONE pool for the whole app (do this once)
-const pool = mysql.createPool(dbConfig);
-
-// start the server
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  database: process.env.DB_NAME,
+  port: Number(process.env.DB_PORT),
 });
 
-const cors = require("cors");
+// -------------------- JWT -------------------- //
+const JWT_SECRET = process.env.JWT_SECRET;
 
-const allowedOrigins = [
-  "http://localhost:3000",
-  "https://card-app-smoky.vercel.app",
-  // "https://YOUR-frontend.onrender.com"
-];
+// -------------------- CORS -------------------- //
+app.use(cors({ origin: true }));
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // allow requests with no origin (Postman/server-to-server)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false,
-  })
-);
-
-// get all cards
-app.get("/allcards", async (req, res) => {
+// -------------------- TABLE -------------------- //
+async function ensureTables() {
+  const conn = await pool.getConnection();
   try {
-    const [rows] = await pool.query("SELECT * FROM cards");
-    res.json(rows);
-  } catch (error) {
-    console.error("Error fetching cards:", error);
-    res
-      .status(500)
-      .json({ error: "Internal Server Error for getting all cards" });
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS certs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        cert_name VARCHAR(255) NOT NULL,
+        cert_pic TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL
+      )
+    `);
+  } finally {
+    conn.release();
   }
-});
+}
 
-// add a new card
-app.post("/addcard", async (req, res) => {
-  const { card_name, card_pic } = req.body;
+// -------------------- AUTH MIDDLEWARE -------------------- //
+function authenticateAdmin(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header) return res.sendStatus(401);
 
-  if (!card_name || !card_pic) {
-    return res
-      .status(400)
-      .json({ error: "card_name and card_pic are required" });
-  }
-
+  const token = header.split(" ")[1];
   try {
-    const [result] = await pool.query(
-      "INSERT INTO cards (card_name, card_pic) VALUES (?, ?)",
-      [card_name, card_pic]
-    );
-    res.status(201).json(result);
-  } catch (error) {
-    console.error("Error adding card:", error);
-    res.status(500).json({ error: "Internal Server Error for adding a card" });
+    jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.sendStatus(401);
   }
-});
+}
 
-// update a card, week 10
-app.put("/updatecard/:id", async (req, res) => {
-  const { id } = req.params;
-  const { card_name, card_pic } = req.body;
+// -------------------- ROUTES -------------------- //
 
-  if (!card_name || !card_pic) {
-    return res
-      .status(400)
-      .json({ error: "card_name and card_pic are required" });
-  }
-
+// User registration
+app.post("/register", async (req, res) => {
   try {
-    const [result] = await pool.query(
-      "UPDATE cards SET card_name = ?, card_pic = ? WHERE id = ?",
-      [card_name, card_pic, id]
-    );
+    const { email, password } = req.body;
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Card not found" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
     }
 
-    res
-      .status(200)
-      .json({ message: "Card updated", affectedRows: result.affectedRows });
-  } catch (error) {
-    console.error("Error updating card:", error);
-    res
-      .status(500)
-      .json({ error: "Internal Server Error for updating a card" });
+    await pool.query(
+      "INSERT INTO users (email, password) VALUES (?, ?)",
+      [email, password]
+    );
+
+    res.status(201).json({ message: "User registered successfully" });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(400).json({ error: "Email already exists" });
+    }
+    res.status(500).json({ error: "Registration failed" });
   }
 });
 
-// delete a card, week 10
-app.delete("/deletecard/:id", async (req, res) => {
-  const { id } = req.params;
-
+// User login
+app.post("/login", async (req, res) => {
   try {
-    const [result] = await pool.query("DELETE FROM cards WHERE id = ?", [id]);
+    const { email, password } = req.body;
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Card not found" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
     }
 
-    res
-      .status(200)
-      .json({ message: "Card deleted", affectedRows: result.affectedRows });
-  } catch (error) {
-    console.error("Error deleting card:", error);
-    res
-      .status(500)
-      .json({ error: "Internal Server Error for deleting a card" });
+    const [rows] = await pool.query(
+      "SELECT * FROM users WHERE email = ? AND password = ?",
+      [email, password]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const user = rows[0];
+    const token = jwt.sign(
+      { id: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    res.json({ token, email: user.email });
+  } catch (err) {
+    res.status(500).json({ error: "Login failed" });
   }
 });
+
+// PUBLIC: view certs (no login needed)
+app.get("/allcerts", async (req, res) => {
+  const [rows] = await pool.query("SELECT * FROM certs");
+  res.json(rows);
+});
+
+// ADMIN ONLY: add cert
+app.post("/addcert", authenticateAdmin, async (req, res) => {
+  const { cert_name, cert_pic } = req.body;
+  await pool.query(
+    "INSERT INTO certs (cert_name, cert_pic) VALUES (?, ?)",
+    [cert_name, cert_pic]
+  );
+  res.sendStatus(201);
+});
+
+// ADMIN ONLY: update cert
+app.put("/updatecert/:id", authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { cert_name, cert_pic } = req.body;
+  await pool.query(
+    "UPDATE certs SET cert_name = ?, cert_pic = ? WHERE id = ?",
+    [cert_name, cert_pic, id]
+  );
+  res.sendStatus(200);
+});
+
+// ADMIN ONLY: delete cert
+app.delete("/deletecert/:id", authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  await pool.query("DELETE FROM certs WHERE id = ?", [id]);
+  res.sendStatus(200);
+});
+
+// -------------------- START -------------------- //
+(async () => {
+  await ensureTables();
+  app.listen(port, () =>
+    console.log(`✅ Server running on port ${port}`)
+  );
+})();
+
