@@ -123,11 +123,11 @@ app.post("/login", async (req, res) => {
 // PUBLIC: view certs
 app.get("/allcerts", async (req, res) => {
   try {
-    const rows = await safeQuery("SELECT * FROM certs");
-    res.json(rows);
+    const rows = await pool.query("SELECT * FROM certs");
+    res.json(rows[0]); // rows[0] contains the results from mysql2
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch certs" });
+    console.error("DB error fetching certs:", err);
+    res.status(500).json({ error: "Failed to fetch certs", details: err.message });
   }
 });
 
